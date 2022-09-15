@@ -775,6 +775,7 @@ func (c *Cluster) updateSecret(
 		updateSecretMsg = fmt.Sprintf("updating the secret %s from the infrastructure roles", secretName)
 	} else {
 		// for non-infrastructure role - update the role with the password from the secret
+		pwdUser.Name = string(secret.Data["username"])
 		pwdUser.Password = string(secret.Data["password"])
 		userMap[userKey] = pwdUser
 	}
@@ -823,12 +824,14 @@ func (c *Cluster) rotatePasswordInSecret(
 
 	// update password and next rotation date if configured interval has passed
 	if currentTime.After(nextRotationDate) {
+		newPassword := []byte(util.RandomPassword(constants.PasswordLength))
 		// create rotation user if role is not listed for in-place password update
 		if !util.SliceContains(c.Spec.UsersWithInPlaceSecretRotation, secretUsername) {
 			rotationUser := secretPgUser
 			newRotationUsername := fmt.Sprintf("%s%s", secretUsername, currentTime.Format("060102"))
 			rotationUser.Name = newRotationUsername
 			rotationUser.MemberOf = []string{secretUsername}
+			rotationUser.Password = string(newPassword)
 			(*rotationUsers)[newRotationUsername] = rotationUser
 			secret.Data["username"] = []byte(newRotationUsername)
 
@@ -871,7 +874,7 @@ func (c *Cluster) rotatePasswordInSecret(
 				c.logger.Warnf("secret of stream user %s changed", constants.EventStreamSourceSlotPrefix+constants.UserRoleNameSuffix)
 			}
 		}
-		secret.Data["password"] = []byte(util.RandomPassword(constants.PasswordLength))
+		secret.Data["password"] = newPassword
 		secret.Data["nextRotation"] = []byte(nextRotationDateStr)
 		updateSecretMsg = fmt.Sprintf("updating secret %s due to password rotation - next rotation date: %s", secretName, nextRotationDateStr)
 	}
